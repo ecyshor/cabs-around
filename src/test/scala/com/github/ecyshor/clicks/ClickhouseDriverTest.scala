@@ -5,6 +5,7 @@ import io.circe.generic.auto._
 import org.http4s.Uri
 import org.http4s.client.blaze._
 import org.scalatest.{CancelAfterFailure, FlatSpec, Matchers}
+import org.http4s.circe.CirceEntityEncoder._
 
 import scala.concurrent.ExecutionContext.Implicits.global
 
@@ -25,7 +26,7 @@ class ClickhouseDriverTest extends FlatSpec with Matchers with CancelAfterFailur
     BlazeClientBuilder[IO](global).resource.use { implicit c =>
       for {
         _ <- client.create[String]("CREATE TABLE IF NOT EXISTS test_table(firstColumn Int32, secondColumn String) ENGINE = Memory")
-        _ <- client.insert("test_table", Seq(
+        _ <- client.insert("test_table", fs2.Stream(
           TestColumn(1, "id"),
           TestColumn(2, "id_2"),
           TestColumn(5, "id_2")

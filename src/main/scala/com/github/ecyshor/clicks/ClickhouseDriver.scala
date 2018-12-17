@@ -1,13 +1,13 @@
 package com.github.ecyshor.clicks
 
 import cats.effect._
+import com.github.ecyshor.clicks.HttpClientExtension._
 import fs2.Chunk
-import io.circe._
-import io.circe.syntax._
 import org.http4s._
 import org.http4s.client.{Client => HttpClient}
-import HttpClientExtension._
-case class ClickhouseException(message:String) extends RuntimeException(message)
+import org.http4s.headers.`Content-Type`
+
+case class ClickhouseException(message: String) extends RuntimeException(message)
 
 class ClickhouseDriver(host: Uri, database: String) {
 
@@ -32,19 +32,24 @@ class ClickhouseDriver(host: Uri, database: String) {
       ))
   }
 
-  def insert[A](table: String, entities: Seq[A])(implicit client: HttpClient[IO], ev: Encoder[A]): IO[String] = {
-    val req = Request(
-      Method.POST,
-      host.copy(query = Query(
-        "query" -> Some(s"INSERT INTO $database.$table FORMAT JSONEachRow")
-      )),
-      body =
-        fs2.Stream[IO, A](entities: _*)
-          .map(el => {
-            Printer.noSpaces.pretty(el.asJson)
-          }).intersperse("\n").flatMap(el => fs2.Stream.chunk(Chunk.bytes(el.getBytes())))
-    )
-    client.fetchAsE[String](req)
+  def insert[A](table: String, entities: fs2.Stream[IO, A])(implicit client: HttpClient[IO], ev: EntityEncoder[IO, A]): IO[String] = {
+    IO.fromEither(ev.contentType.collect {
+      case `Content-Type`(MediaType.application.json, _) => "JSONEachRow"
+      case `Content-Type`(MediaType.text.csv, _) => "CSV"
+    }.toRight(ClickhouseException(s"Cannot determine format from $ev"))).flatMap(format => {
+      client.fetchAsE[String](Request(
+        Method.POST,
+        host.copy(query = Query(
+          "query" -> Some(s"INSERT INTO $database.$table FORMAT $format")
+        )),
+        body =
+          entities
+            .map(el => {
+              ev.toEntity(el).body
+            }).intersperse(fs2.Stream.chunk(Chunk.bytes("\n".getBytes))).flatten
+      ))
+    })
+
   }
 
 
