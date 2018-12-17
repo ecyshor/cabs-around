@@ -10,7 +10,7 @@ object HttpClientExtension {
 
   implicit class Http4sClientOps[F[?] : Sync](client: Client[F])(implicit F: Bracket[F, Throwable]) {
     /**
-      * Submits a request and decodes the response, regardless of the status code.
+      * Submits a request and decodes the response, only if the status code represents success and responds with an error in all other cases
       * The underlying HTTP connection is closed at the completion of the
       * decoding.
       */
