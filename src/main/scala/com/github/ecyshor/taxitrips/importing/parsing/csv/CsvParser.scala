@@ -2,6 +2,8 @@ package com.github.ecyshor.taxitrips.importing.parsing.csv
 
 import cats.data.Validated
 import cats.implicits._
+import shapeless._
+import shapeless.ops.hlist.Length
 
 trait CsvParser[T] {
 
@@ -10,6 +12,24 @@ trait CsvParser[T] {
 }
 
 object CsvParser {
+  object decode extends Poly1 {
+    implicit def decoded[A: CsvFieldReader] = at[A](_.read)
+  }
+
+  implicit val hnilParser: CsvParser[HNil] =
+    createEncoder(hnil => Nil)
+
+  implicit def hlistParser[H, T <: HList](
+                                            implicit
+                                            hParser: CsvFieldReader[H],
+                                            tEncoder: CsvEncoder[T]
+                                          ): CsvEncoder[H :: T] =
+    createEncoder {
+      case h :: t =>
+        hEncoder.encode(h) ++ tEncoder.encode(t)
+    }
+
+  implicit def genericParser[N <: Nat,T <: HList, R](implicit gen:Generic.Aux[T, R],  size: Length.Aux[T, N],)
 
   def parse1[Target, A0: CsvFieldReader](a0Key: String)(b: A0 => Target): CsvParser[Target] =
     (values: Map[String, String]) => Validated.fromEither[CsvFieldParsingException,Target](CsvFieldReader[A0].read(a0Key, values).map(b))
@@ -22,11 +42,15 @@ case class MissingFieldException(message: String) extends CsvFieldParsingExcepti
 
 case class BadFieldValueException(message: String) extends CsvFieldParsingException
 
-trait CsvFieldReader[T] {
-  def read(header: String, values: Map[String, String]): Either[CsvFieldParsingException, T]
+trait CsvFieldReader[A,T] {
+  def read(header: A, values: Map[String, String]): Either[CsvFieldParsingException, T]
 }
 
 object CsvFieldReader {
+
+  implicit class CsvFieldReaderOps[A,T](accessor:A)(implicit val reader:CsvFieldReader[A,T]) {
+    def readFrom(values:Map[String,String]): Either[CsvFieldParsingException, T] = reader.read(accessor, values)
+  }
 
   def apply[A: CsvFieldReader]: CsvFieldReader[A] = implicitly[CsvFieldReader[A]]
 
